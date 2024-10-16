@@ -1,0 +1,6 @@
+streamlit==1.25.0
+streamlit-authenticator==0.2.3
+transformers==4.34.0
+google-auth==2.23.0
+google-auth-oauthlib==1.0.0
+pandas==2.1.1
