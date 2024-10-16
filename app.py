@@ -1,99 +1,131 @@
 import streamlit as st
-import streamlit_authenticator as stauth
-from google.oauth2 import id_token
-from google.auth.transport import requests
-from transformers import pipeline
-import pandas as pd
 import json
 
-# Google OAuth configuration
-CLIENT_ID = 'your-google-client-id.apps.googleusercontent.com'
+# Dummy in-memory database to store shopkeeper credentials and items
+if 'shopkeepers' not in st.session_state:
+    st.session_state.shopkeepers = {}
 
-# Dummy Hugging Face model for demo
-# Use a pipeline as a high-level helper
-from transformers import pipeline
+# Helper function to save shopkeeper credentials and items
+def save_shopkeeper_data(shopkeepers):
+    st.session_state.shopkeepers = shopkeepers
 
-hf_model = pipeline("text-generation", model="shahidul034/text_generation_bangla_model")
-#hf_model = pipeline("text-generation", model="gpt2")
+# Shopkeeper sign-up function
+def sign_up():
+    st.subheader("Sign Up")
+    shopkeeper_id = st.text_input("Set your Shopkeeper ID", key="signup_id")
+    password = st.text_input("Set your Password", type="password", key="signup_password")
 
-# Dummy database to store shopkeeper items (can be extended with a proper database)
-shopkeeper_data = {}
+    if st.button("Sign Up"):
+        if shopkeeper_id in st.session_state.shopkeepers:
+            st.error("Shopkeeper ID already exists. Please choose a different one.")
+        else:
+            st.session_state.shopkeepers[shopkeeper_id] = {
+                'password': password,
+                'items': []
+            }
+            save_shopkeeper_data(st.session_state.shopkeepers)
+            st.success("Sign-up successful! You can now sign in.")
 
-# Function to verify Google OAuth sign-in
-def verify_google_token(token):
-    try:
-        idinfo = id_token.verify_oauth2_token(token, requests.Request(), CLIENT_ID)
-        return idinfo
-    except ValueError:
-        return None
+# Shopkeeper sign-in function
+def sign_in():
+    st.subheader("Sign In")
+    shopkeeper_id = st.text_input("Enter Shopkeeper ID", key="signin_id")
+    password = st.text_input("Enter Password", type="password", key="signin_password")
 
-# Streamlit app begins
+    if st.button("Sign In"):
+        if shopkeeper_id in st.session_state.shopkeepers:
+            if st.session_state.shopkeepers[shopkeeper_id]['password'] == password:
+                st.session_state.shopkeeper_logged_in = shopkeeper_id
+                st.success(f"Welcome back, {shopkeeper_id}!")
+            else:
+                st.error("Invalid password.")
+        else:
+            st.error("Invalid Shopkeeper ID.")
+
+# Shopkeeper's item management
+def manage_items():
+    st.subheader("Manage Your Items")
+
+    if 'shopkeeper_logged_in' in st.session_state:
+        shopkeeper_id = st.session_state.shopkeeper_logged_in
+        items = st.session_state.shopkeepers[shopkeeper_id]['items']
+
+        item_name = st.text_input("Enter Item Name")
+        item_rate = st.text_input("Enter Item Rate")
+        item_image = st.file_uploader("Upload Item Image (optional)", type=["png", "jpg", "jpeg"])
+
+        if st.button("Add/Update Item"):
+            if item_name and item_rate:
+                item_data = {'name': item_name, 'rate': item_rate, 'image': item_image}
+                items.append(item_data)
+                st.session_state.shopkeepers[shopkeeper_id]['items'] = items
+                save_shopkeeper_data(st.session_state.shopkeepers)
+                st.success("Item added/updated successfully!")
+            else:
+                st.error("Please provide both item name and rate.")
+
+        # Display added items
+        if items:
+            st.subheader("Your Items")
+            for item in items:
+                st.write(f"Item: {item['name']}, Rate: {item['rate']}")
+                if item['image']:
+                    st.image(item['image'], caption=item['name'], use_column_width=True)
+        else:
+            st.write("No items added yet.")
+
+# Customer search function
+def customer_search():
+    st.subheader("Customer Search")
+    search_option = st.radio("Search by", ("Shopkeeper ID", "Item Name"))
+
+    if search_option == "Shopkeeper ID":
+        shopkeeper_id = st.text_input("Enter Shopkeeper ID to view items")
+        if st.button("Search"):
+            if shopkeeper_id in st.session_state.shopkeepers:
+                items = st.session_state.shopkeepers[shopkeeper_id]['items']
+                if items:
+                    st.subheader(f"Items by {shopkeeper_id}")
+                    for item in items:
+                        st.write(f"Item: {item['name']}, Rate: {item['rate']}")
+                        if item['image']:
+                            st.image(item['image'], caption=item['name'], use_column_width=True)
+                else:
+                    st.write("No items available.")
+            else:
+                st.error("Invalid Shopkeeper ID.")
+
+    elif search_option == "Item Name":
+        item_name = st.text_input("Enter Item Name to search")
+        if st.button("Search"):
+            found = False
+            for shopkeeper_id, data in st.session_state.shopkeepers.items():
+                items = data['items']
+                for item in items:
+                    if item['name'].lower() == item_name.lower():
+                        st.subheader(f"Found in {shopkeeper_id}'s store")
+                        st.write(f"Item: {item['name']}, Rate: {item['rate']}")
+                        if item['image']:
+                            st.image(item['image'], caption=item['name'], use_column_width=True)
+                        found = True
+            if not found:
+                st.write("No shopkeepers have this item.")
+
+# Streamlit app
 st.title("Superstore Application")
 
-# Choose user mode
+# Sidebar for selecting mode
 mode = st.sidebar.selectbox("Choose Mode", ["Customer", "Shopkeeper"])
 
-# Shopkeeper Mode
+# Shopkeeper mode: Sign up, sign in, and manage items
 if mode == "Shopkeeper":
-    st.header("Shopkeeper Mode")
-    
-    # Sign up/sign in for shopkeeper (using Google OAuth)
-    if 'logged_in' not in st.session_state:
-        email = st.text_input("Enter your Gmail account")
-        google_token = st.text_input("Enter your Google token for authentication")
-        
-        if st.button("Sign In"):
-            user_info = verify_google_token(google_token)
-            if user_info and user_info['email'] == email:
-                st.session_state.logged_in = True
-                st.success(f"Welcome, {user_info['name']}!")
-            else:
-                st.error("Invalid Google credentials.")
-
-    # After successful login
-    if st.session_state.get('logged_in', False):
-        st.write("You are logged in as a Shopkeeper.")
-
-        # Upload item data (images and rates)
-        uploaded_files = st.file_uploader("Upload Item Images", type=["png", "jpg"], accept_multiple_files=True)
-        item_names = st.text_area("Enter Item Names (comma separated)")
-        item_rates = st.text_area("Enter Item Rates (comma separated)")
-
-        if st.button("Submit Items"):
-            if uploaded_files and item_names and item_rates:
-                names = item_names.split(',')
-                rates = item_rates.split(',')
-                
-                for i, file in enumerate(uploaded_files):
-                    item_data = {
-                        'name': names[i].strip(),
-                        'rate': rates[i].strip(),
-                        'image': file
-                    }
-                    shopkeeper_data[f"item_{i}"] = item_data
-                
-                st.success("Items uploaded successfully!")
-            else:
-                st.error("Please upload all details.")
-
-        # Display items uploaded
-        if shopkeeper_data:
-            st.subheader("Your Uploaded Items")
-            data = [{"Item": v['name'], "Rate": v['rate']} for k, v in shopkeeper_data.items()]
-            df = pd.DataFrame(data)
-            st.table(df)
-
-# Customer Mode
-elif mode == "Customer":
-    st.header("Customer Mode")
-    
-    # Browse and order items uploaded by shopkeeper
-    if shopkeeper_data:
-        st.subheader("Available Items")
-        for key, item in shopkeeper_data.items():
-            st.image(item['image'], caption=item['name'])
-            st.write(f"Price: {item['rate']}")
-            if st.button(f"Order {item['name']}", key=key):
-                st.success(f"You have ordered {item['name']}!")
+    if 'shopkeeper_logged_in' not in st.session_state:
+        sign_up()
+        st.write("Already have an account? Sign in below:")
+        sign_in()
     else:
-        st.write("No items available at the moment.")
+        manage_items()
+
+# Customer mode: Search for items by shopkeeper or item name
+elif mode == "Customer":
+    customer_search()
